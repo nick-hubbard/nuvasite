@@ -6,3 +6,95 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+/// Lifecycle state that determines whether a User Account is usable.
+/// Hard delete is a separate physical operation, never a status.
+enum UserAccountStatus {
+  ACTIVE
+  DISABLED
+  BANNED
+  REMOVED
+
+  @@map("user_account_status")
+}
+
+/// Ways a user proves control of a User Account. v1 supports exactly these.
+enum UserAuthMethodType {
+  EMAIL_PASSWORD
+  GOOGLE
+
+  @@map("user_auth_method_type")
+}
+
+/// The durable record for one logged-in Nuvasite user (never a Visitor).
+/// Identified by one globally unique lowercase email across all statuses.
+model UserAccount {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @map("user_account_id") @db.Uuid
+  email       String            @unique @db.VarChar(320)
+  firstName   String?           @map("first_name")
+  lastName    String?           @map("last_name")
+  status      UserAccountStatus @default(ACTIVE)
+  lastLoginAt DateTime?         @map("last_login_at") @db.Timestamptz(6)
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  authMethods          UserAuthMethod[]
+  statusChanges        UserAccountStatusChange[] @relation("StatusChangeSubject")
+  statusChangesActedOn UserAccountStatusChange[] @relation("StatusChangeActor")
+
+  @@map("user_account")
+}
+
+/// One way a User Account authenticates. At most one method of each type per
+/// account; an OAuth provider identity links to at most one account.
+model UserAuthMethod {
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @map("user_auth_method_id") @db.Uuid
+  userAccountId     String             @map("user_account_id") @db.Uuid
+  methodType        UserAuthMethodType @map("method_type")
+  /// Google `sub` for GOOGLE methods; must be null for EMAIL_PASSWORD.
+  /// Enforced by a database check constraint in migration SQL.
+  providerAccountId String?            @map("provider_account_id") @db.VarChar(255)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  userAccount        UserAccount             @relation(fields: [userAccountId], references: [id], onDelete: Cascade)
+  passwordCredential UserPasswordCredential?
+
+  @@unique([userAccountId, methodType])
+  @@unique([methodType, providerAccountId])
+  @@map("user_auth_method")
+}
+
+/// Stored password verifier for an email/password Auth Method. Database
+/// trigger enforces it can only reference EMAIL_PASSWORD methods.
+model UserPasswordCredential {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @map("user_password_credential_id") @db.Uuid
+  userAuthMethodId String   @unique @map("user_auth_method_id") @db.Uuid
+  passwordHash     String   @map("password_hash")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  authMethod UserAuthMethod @relation(fields: [userAuthMethodId], references: [id], onDelete: Cascade)
+
+  @@map("user_password_credential")
+}
+
+/// Audit record of a User Account Status transition. The initial null-to-
+/// ACTIVE assignment is recorded too, so history is complete from creation.
+/// Actor uses SetNull so audit rows survive hard-deleting the actor account.
+model UserAccountStatusChange {
+  id             String             @id @default(dbgenerated("gen_random_uuid()")) @map("user_account_status_change_id") @db.Uuid
+  userAccountId  String             @map("user_account_id") @db.Uuid
+  previousStatus UserAccountStatus? @map("previous_status")
+  newStatus      UserAccountStatus  @map("new_status")
+  /// Null when the change was performed by an automated/system process.
+  changedById    String?            @map("changed_by_user_account_id") @db.Uuid
+  reason         String?
+  changedAt      DateTime           @default(now()) @map("changed_at") @db.Timestamptz(6)
+
+  userAccount UserAccount  @relation("StatusChangeSubject", fields: [userAccountId], references: [id], onDelete: Cascade)
+  changedBy   UserAccount? @relation("StatusChangeActor", fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([userAccountId, changedAt])
+  @@map("user_account_status_change")
+}
