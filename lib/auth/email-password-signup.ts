@@ -3,6 +3,10 @@ import { EmailAlreadyInUseError } from "./errors";
 import { normalizeEmail, normalizeProfileName } from "./normalize";
 import { hashPassword } from "./password";
 import { assertPasswordMeetsPolicy } from "./password-policy";
+import {
+  createEmailPasswordMethod,
+  recordInitialActiveStatus,
+} from "./signup-records";
 
 export interface EmailPasswordSignupInput {
   email: string;
@@ -40,22 +44,8 @@ export async function signUpWithEmailPassword(
       },
     });
 
-    await tx.userAuthMethod.create({
-      data: {
-        userAccountId: account.id,
-        methodType: "EMAIL_PASSWORD",
-        passwordCredential: { create: { passwordHash } },
-      },
-    });
-
-    await tx.userAccountStatusChange.create({
-      data: {
-        userAccountId: account.id,
-        previousStatus: null,
-        newStatus: "ACTIVE",
-        changedById: null,
-      },
-    });
+    await createEmailPasswordMethod(tx, account.id, passwordHash);
+    await recordInitialActiveStatus(tx, account.id);
 
     return account;
   });

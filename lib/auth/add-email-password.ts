@@ -1,6 +1,7 @@
 import type { PrismaClient } from "../../app/generated/prisma/client";
 import { hashPassword } from "./password";
 import { assertPasswordMeetsPolicy } from "./password-policy";
+import { createEmailPasswordMethod } from "./signup-records";
 
 export interface AddEmailPasswordInput {
   userAccountId: string;
@@ -20,13 +21,7 @@ export async function addEmailPasswordAuthMethod(
   const passwordHash = hashPassword(input.password);
 
   return prisma.$transaction(async (tx) => {
-    await tx.userAuthMethod.create({
-      data: {
-        userAccountId: input.userAccountId,
-        methodType: "EMAIL_PASSWORD",
-        passwordCredential: { create: { passwordHash } },
-      },
-    });
+    await createEmailPasswordMethod(tx, input.userAccountId, passwordHash);
 
     return tx.userAccount.findUniqueOrThrow({
       where: { id: input.userAccountId },

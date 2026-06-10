@@ -1,5 +1,6 @@
 import type { PrismaClient } from "../../app/generated/prisma/client";
 import { normalizeEmail, normalizeProfileName } from "./normalize";
+import { recordInitialActiveStatus } from "./signup-records";
 
 /**
  * The identity claims Nuvasite consumes from a completed Google OAuth flow.
@@ -61,14 +62,7 @@ export async function signUpWithGoogle(
       },
     });
 
-    await tx.userAccountStatusChange.create({
-      data: {
-        userAccountId: account.id,
-        previousStatus: null,
-        newStatus: "ACTIVE",
-        changedById: null,
-      },
-    });
+    await recordInitialActiveStatus(tx, account.id);
 
     return account;
   });
