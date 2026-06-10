@@ -1,0 +1,22 @@
+services:
+  postgres:
+    build:
+      context: ./docker/postgres
+    container_name: nuvasite-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nuvasite
+      POSTGRES_PASSWORD: nuvasite
+      POSTGRES_DB: nuvasite
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nuvasite -d nuvasite"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:

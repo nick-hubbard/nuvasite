@@ -4,6 +4,7 @@
 node_modules
 .pnp
 .pnp.js
+app/generated/prisma
 
 # Local env files
 .env
@@ -37,3 +38,5 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+
+/app/generated/prisma

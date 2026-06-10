@@ -8,9 +8,18 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --max-warnings 0",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "postinstall": "prisma generate",
+    "prisma:generate": "prisma generate",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
     "next": "16.2.7",
     "react": "19.2.0",
     "react-dom": "19.2.0"
@@ -24,8 +33,9 @@
     "@types/react-dom": "19.2.2",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
+    "prisma": "^7.8.0",
     "tailwindcss": "4.3.0",
-    "typescript-eslint": "^8.46.4",
-    "typescript": "5.9.2"
+    "typescript": "5.9.2",
+    "typescript-eslint": "^8.46.4"
   }
 }
