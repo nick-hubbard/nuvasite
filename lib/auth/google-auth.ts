@@ -1,4 +1,5 @@
 import type { PrismaClient } from "../../app/generated/prisma/client";
+import { assertAccountCanAuthenticate } from "./account-status";
 import {
   assertVerifiedGoogleEmail,
   signUpWithGoogle,
@@ -7,16 +8,20 @@ import {
 import { normalizeProfileName } from "./normalize";
 
 /**
- * Resolves a completed Google OAuth flow to exactly one User Account:
+ * Google Authentication. Resolves a completed Google OAuth flow to exactly
+ * one User Account:
  *
  *   1. A known Google provider identity returns its linked account.
  *   2. A verified Google email matching an existing account links a GOOGLE
  *      Auth Method to that account instead of creating a duplicate.
  *   3. Otherwise this is Google-first signup.
  *
- * Linking fills missing User Profile names from Google but never overwrites
- * existing profile data, and is transactional: a failed link leaves no
- * partial Auth Method or profile changes behind.
+ * Only an Active account may complete Authentication; blocked accounts are
+ * refused before any linking side effects. Linking fills missing User
+ * Profile names from Google but never overwrites existing profile data, and
+ * is transactional: a failed link leaves no partial Auth Method or profile
+ * changes behind. Returns the authenticated account as the session payload;
+ * session persistence itself is out of scope for v1.
  */
 export async function authenticateWithGoogle(
   prisma: PrismaClient,
@@ -32,16 +37,19 @@ export async function authenticateWithGoogle(
     include: { userAccount: true },
   });
   if (linkedMethod) {
-    return linkedMethod.userAccount;
+    assertAccountCanAuthenticate(linkedMethod.userAccount);
+    return { account: linkedMethod.userAccount };
   }
 
   const email = assertVerifiedGoogleEmail(identity);
   const existing = await prisma.userAccount.findUnique({ where: { email } });
   if (!existing) {
-    return signUpWithGoogle(prisma, identity);
+    return { account: await signUpWithGoogle(prisma, identity) };
   }
 
-  return prisma.$transaction(async (tx) => {
+  assertAccountCanAuthenticate(existing);
+
+  const account = await prisma.$transaction(async (tx) => {
     await tx.userAuthMethod.create({
       data: {
         userAccountId: existing.id,
@@ -59,4 +67,6 @@ export async function authenticateWithGoogle(
       },
     });
   });
+
+  return { account };
 }

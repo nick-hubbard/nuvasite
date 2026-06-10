@@ -27,7 +27,7 @@ describe("Auth Method linking", () => {
       password: VALID_PASSWORD,
     });
 
-    const account = await authenticateWithGoogle(prisma, GOOGLE_IDENTITY);
+    const { account } = await authenticateWithGoogle(prisma, GOOGLE_IDENTITY);
 
     expect(account.id).toBe(existing.id);
     expect(await prisma.userAccount.count()).toBe(1);
@@ -78,7 +78,7 @@ describe("Auth Method linking", () => {
       password: VALID_PASSWORD,
     });
 
-    const account = await authenticateWithGoogle(prisma, {
+    const { account } = await authenticateWithGoogle(prisma, {
       ...GOOGLE_IDENTITY,
       email: "SHARED@example.COM",
     });
@@ -92,8 +92,8 @@ describe("Auth Method linking", () => {
       email: "shared@example.com",
       password: VALID_PASSWORD,
     });
-    const first = await authenticateWithGoogle(prisma, GOOGLE_IDENTITY);
-    const second = await authenticateWithGoogle(prisma, GOOGLE_IDENTITY);
+    const { account: first } = await authenticateWithGoogle(prisma, GOOGLE_IDENTITY);
+    const { account: second } = await authenticateWithGoogle(prisma, GOOGLE_IDENTITY);
 
     expect(second.id).toBe(first.id);
     expect(await prisma.userAuthMethod.count()).toBe(2);
@@ -106,7 +106,7 @@ describe("Auth Method linking", () => {
       firstName: "Gracie",
     });
 
-    const account = await authenticateWithGoogle(prisma, GOOGLE_IDENTITY);
+    const { account } = await authenticateWithGoogle(prisma, GOOGLE_IDENTITY);
 
     expect(account.id).toBe(existing.id);
     expect(account.firstName).toBe("Gracie");
@@ -133,7 +133,7 @@ describe("Auth Method linking", () => {
   it("resolves an already-linked Google identity to its account even if the Google email changed", async () => {
     const original = await signUpWithGoogle(prisma, GOOGLE_IDENTITY);
 
-    const account = await authenticateWithGoogle(prisma, {
+    const { account } = await authenticateWithGoogle(prisma, {
       ...GOOGLE_IDENTITY,
       email: "renamed@example.com",
     });
