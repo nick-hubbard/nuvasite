@@ -5,6 +5,7 @@ import {
   signUpWithGoogle,
   type GoogleIdentity,
 } from "./google-signup";
+import { recordSessionCreatingLogin } from "./last-login";
 import { normalizeProfileName } from "./normalize";
 
 /**
@@ -38,18 +39,24 @@ export async function authenticateWithGoogle(
   });
   if (linkedMethod) {
     assertAccountCanAuthenticate(linkedMethod.userAccount);
-    return { account: linkedMethod.userAccount };
+    return {
+      account: await recordSessionCreatingLogin(
+        prisma,
+        linkedMethod.userAccount.id,
+      ),
+    };
   }
 
   const email = assertVerifiedGoogleEmail(identity);
   const existing = await prisma.userAccount.findUnique({ where: { email } });
   if (!existing) {
-    return { account: await signUpWithGoogle(prisma, identity) };
+    const created = await signUpWithGoogle(prisma, identity);
+    return { account: await recordSessionCreatingLogin(prisma, created.id) };
   }
 
   assertAccountCanAuthenticate(existing);
 
-  const account = await prisma.$transaction(async (tx) => {
+  const linked = await prisma.$transaction(async (tx) => {
     await tx.userAuthMethod.create({
       data: {
         userAccountId: existing.id,
@@ -68,5 +75,5 @@ export async function authenticateWithGoogle(
     });
   });
 
-  return { account };
+  return { account: await recordSessionCreatingLogin(prisma, linked.id) };
 }

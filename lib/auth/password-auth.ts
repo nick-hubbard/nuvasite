@@ -1,5 +1,6 @@
 import type { PrismaClient } from "../../app/generated/prisma/client";
 import { assertAccountCanAuthenticate } from "./account-status";
+import { recordSessionCreatingLogin } from "./last-login";
 import { normalizeEmail } from "./normalize";
 import { verifyPassword } from "./password";
 
@@ -47,5 +48,5 @@ export async function authenticateWithPassword(
 
   assertAccountCanAuthenticate(account);
 
-  return { account };
+  return { account: await recordSessionCreatingLogin(prisma, account.id) };
 }
