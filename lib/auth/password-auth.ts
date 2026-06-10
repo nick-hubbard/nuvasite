@@ -1,6 +1,5 @@
 import type { PrismaClient } from "../../app/generated/prisma/client";
-import { assertAccountCanAuthenticate } from "./account-status";
-import { recordSessionCreatingLogin } from "./last-login";
+import { completeAuthentication } from "./completed-authentication";
 import { normalizeEmail } from "./normalize";
 import { verifyPassword } from "./password";
 
@@ -42,11 +41,9 @@ export async function authenticateWithPassword(
   if (!account || !credential) {
     throw new InvalidCredentialsError();
   }
-  if (!verifyPassword(input.password, credential.passwordHash)) {
+  if (!(await verifyPassword(input.password, credential.passwordHash))) {
     throw new InvalidCredentialsError();
   }
 
-  assertAccountCanAuthenticate(account);
-
-  return { account: await recordSessionCreatingLogin(prisma, account.id) };
+  return completeAuthentication(prisma, account);
 }

@@ -1,12 +1,11 @@
 import type { PrismaClient } from "../../app/generated/prisma/client";
 import { EmailAlreadyInUseError } from "./errors";
+import { linkEmailPasswordAuthMethodToUserAccount } from "./auth-method-linking";
 import { normalizeEmail, normalizeProfileName } from "./normalize";
 import { hashPassword } from "./password";
 import { assertPasswordMeetsPolicy } from "./password-policy";
-import {
-  createEmailPasswordMethod,
-  recordInitialActiveStatus,
-} from "./signup-records";
+import { isUniqueConstraintError } from "./prisma-errors";
+import { recordInitialActiveStatus } from "./signup-records";
 
 export interface EmailPasswordSignupInput {
   email: string;
@@ -27,26 +26,37 @@ export async function signUpWithEmailPassword(
 ) {
   const email = normalizeEmail(input.email);
   assertPasswordMeetsPolicy(input.password);
-  const passwordHash = hashPassword(input.password);
+  const passwordHash = await hashPassword(input.password);
 
   const existing = await prisma.userAccount.findUnique({ where: { email } });
   if (existing) {
     throw new EmailAlreadyInUseError(email);
   }
 
-  return prisma.$transaction(async (tx) => {
-    const account = await tx.userAccount.create({
-      data: {
-        email,
-        firstName: normalizeProfileName(input.firstName),
-        lastName: normalizeProfileName(input.lastName),
-        status: "ACTIVE",
-      },
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const account = await tx.userAccount.create({
+        data: {
+          email,
+          firstName: normalizeProfileName(input.firstName),
+          lastName: normalizeProfileName(input.lastName),
+          status: "ACTIVE",
+        },
+      });
+
+      await linkEmailPasswordAuthMethodToUserAccount(
+        tx,
+        account.id,
+        passwordHash,
+      );
+      await recordInitialActiveStatus(tx, account.id);
+
+      return account;
     });
-
-    await createEmailPasswordMethod(tx, account.id, passwordHash);
-    await recordInitialActiveStatus(tx, account.id);
-
-    return account;
-  });
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      throw new EmailAlreadyInUseError(email);
+    }
+    throw error;
+  }
 }

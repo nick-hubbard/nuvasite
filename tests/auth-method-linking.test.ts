@@ -99,6 +99,25 @@ describe("Auth Method linking", () => {
     expect(await prisma.userAuthMethod.count()).toBe(2);
   });
 
+  it("handles concurrent Google Authentication for the same email/password account", async () => {
+    const existing = await signUpWithEmailPassword(prisma, {
+      email: "shared@example.com",
+      password: VALID_PASSWORD,
+    });
+
+    const results = await Promise.all([
+      authenticateWithGoogle(prisma, GOOGLE_IDENTITY),
+      authenticateWithGoogle(prisma, GOOGLE_IDENTITY),
+    ]);
+
+    expect(results.map(({ account }) => account.id)).toEqual([
+      existing.id,
+      existing.id,
+    ]);
+    expect(await prisma.userAccount.count()).toBe(1);
+    expect(await prisma.userAuthMethod.count()).toBe(2);
+  });
+
   it("fills only missing profile names when linking, never overwriting existing ones", async () => {
     const existing = await signUpWithEmailPassword(prisma, {
       email: "shared@example.com",

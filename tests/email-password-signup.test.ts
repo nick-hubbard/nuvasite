@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { EmailAlreadyInUseError } from "../lib/auth/errors";
 import { signUpWithEmailPassword } from "../lib/auth/email-password-signup";
 import { prisma, resetDatabase } from "./helpers/db";
 
@@ -117,5 +118,25 @@ describe("Email/password signup", () => {
     expect(await prisma.userAuthMethod.count()).toBe(1);
     expect(await prisma.userPasswordCredential.count()).toBe(1);
     expect(await prisma.userAccountStatusChange.count()).toBe(1);
+  });
+
+  it("maps database duplicate races to the email-in-use domain error", async () => {
+    const results = await Promise.allSettled([
+      signUpWithEmailPassword(prisma, {
+        email: "race@example.com",
+        password: VALID_PASSWORD,
+      }),
+      signUpWithEmailPassword(prisma, {
+        email: "RACE@example.com",
+        password: VALID_PASSWORD,
+      }),
+    ]);
+
+    const rejected = results.find((result) => result.status === "rejected");
+    expect(rejected?.status).toBe("rejected");
+    if (rejected?.status === "rejected") {
+      expect(rejected.reason).toBeInstanceOf(EmailAlreadyInUseError);
+    }
+    expect(await prisma.userAccount.count()).toBe(1);
   });
 });

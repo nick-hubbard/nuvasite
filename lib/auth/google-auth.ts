@@ -1,12 +1,16 @@
 import type { PrismaClient } from "../../app/generated/prisma/client";
 import { assertAccountCanAuthenticate } from "./account-status";
 import {
+  findGoogleAuthMethodByProviderIdentity,
+  linkGoogleAuthMethodToUserAccount,
+} from "./auth-method-linking";
+import { completeAuthentication } from "./completed-authentication";
+import {
   assertVerifiedGoogleEmail,
   signUpWithGoogle,
   type GoogleIdentity,
 } from "./google-signup";
-import { recordSessionCreatingLogin } from "./last-login";
-import { normalizeProfileName } from "./normalize";
+import { isUniqueConstraintError } from "./prisma-errors";
 
 /**
  * Google Authentication. Resolves a completed Google OAuth flow to exactly
@@ -28,52 +32,56 @@ export async function authenticateWithGoogle(
   prisma: PrismaClient,
   identity: GoogleIdentity,
 ) {
-  const linkedMethod = await prisma.userAuthMethod.findUnique({
-    where: {
-      methodType_providerAccountId: {
-        methodType: "GOOGLE",
-        providerAccountId: identity.sub,
-      },
-    },
-    include: { userAccount: true },
-  });
-  if (linkedMethod) {
-    assertAccountCanAuthenticate(linkedMethod.userAccount);
-    return {
-      account: await recordSessionCreatingLogin(
-        prisma,
-        linkedMethod.userAccount.id,
-      ),
-    };
+  async function authenticateLinkedProviderIdentity() {
+    const method = await findGoogleAuthMethodByProviderIdentity(
+      prisma,
+      identity.sub,
+    );
+    if (!method) {
+      return null;
+    }
+    return completeAuthentication(prisma, method.userAccount);
+  }
+
+  const linkedAuthentication = await authenticateLinkedProviderIdentity();
+  if (linkedAuthentication) {
+    return linkedAuthentication;
   }
 
   const email = assertVerifiedGoogleEmail(identity);
   const existing = await prisma.userAccount.findUnique({ where: { email } });
   if (!existing) {
-    const created = await signUpWithGoogle(prisma, identity);
-    return { account: await recordSessionCreatingLogin(prisma, created.id) };
+    try {
+      const created = await signUpWithGoogle(prisma, identity);
+      return completeAuthentication(prisma, created);
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        const racedAuthentication = await authenticateLinkedProviderIdentity();
+        if (racedAuthentication) {
+          return racedAuthentication;
+        }
+      }
+      throw error;
+    }
   }
 
   assertAccountCanAuthenticate(existing);
 
-  const linked = await prisma.$transaction(async (tx) => {
-    await tx.userAuthMethod.create({
-      data: {
-        userAccountId: existing.id,
-        methodType: "GOOGLE",
-        providerAccountId: identity.sub,
-      },
-    });
+  try {
+    const linked = await linkGoogleAuthMethodToUserAccount(
+      prisma,
+      existing,
+      identity,
+    );
 
-    return tx.userAccount.update({
-      where: { id: existing.id },
-      data: {
-        firstName:
-          existing.firstName ?? normalizeProfileName(identity.firstName),
-        lastName: existing.lastName ?? normalizeProfileName(identity.lastName),
-      },
-    });
-  });
-
-  return { account: await recordSessionCreatingLogin(prisma, linked.id) };
+    return completeAuthentication(prisma, linked);
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      const racedAuthentication = await authenticateLinkedProviderIdentity();
+      if (racedAuthentication) {
+        return racedAuthentication;
+      }
+    }
+    throw error;
+  }
 }

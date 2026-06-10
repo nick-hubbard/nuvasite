@@ -1,4 +1,4 @@
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 
 /**
  * Password hashing for Password Credentials, built on Node's scrypt so no
@@ -11,9 +11,26 @@ const SCRYPT_R = 8;
 const SCRYPT_P = 1;
 const KEY_LENGTH = 64;
 
-export function hashPassword(plaintext: string): string {
+async function deriveScryptKey(
+  plaintext: string,
+  salt: Buffer,
+  keyLength: number,
+  options: { N: number; r: number; p: number },
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scrypt(plaintext, salt, keyLength, options, (error, derivedKey) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(derivedKey);
+    });
+  });
+}
+
+export async function hashPassword(plaintext: string): Promise<string> {
   const salt = randomBytes(16);
-  const hash = scryptSync(plaintext, salt, KEY_LENGTH, {
+  const hash = await deriveScryptKey(plaintext, salt, KEY_LENGTH, {
     N: SCRYPT_N,
     r: SCRYPT_R,
     p: SCRYPT_P,
@@ -28,13 +45,16 @@ export function hashPassword(plaintext: string): string {
   ].join("$");
 }
 
-export function verifyPassword(plaintext: string, stored: string): boolean {
+export async function verifyPassword(
+  plaintext: string,
+  stored: string,
+): Promise<boolean> {
   const [scheme, n, r, p, saltHex, hashHex] = stored.split("$");
   if (scheme !== "scrypt" || !saltHex || !hashHex) {
     return false;
   }
   const expected = Buffer.from(hashHex, "hex");
-  const actual = scryptSync(
+  const actual = await deriveScryptKey(
     plaintext,
     Buffer.from(saltHex, "hex"),
     expected.length,

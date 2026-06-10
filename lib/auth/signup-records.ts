@@ -19,21 +19,3 @@ export async function recordInitialActiveStatus(
     },
   });
 }
-
-/**
- * Creates an EMAIL_PASSWORD Auth Method and its Password Credential for an
- * account inside an existing transaction.
- */
-export async function createEmailPasswordMethod(
-  tx: TransactionClient,
-  userAccountId: string,
-  passwordHash: string,
-) {
-  await tx.userAuthMethod.create({
-    data: {
-      userAccountId,
-      methodType: "EMAIL_PASSWORD",
-      passwordCredential: { create: { passwordHash } },
-    },
-  });
-}
